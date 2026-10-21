@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>現場在庫・備品管理</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #121212; color: #e0e0e0; padding: 16px; max-width: 600px; margin: 0 auto; overflow-x: hidden; }
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+    h1 { font-size: 1.15rem; font-weight: bold; color: #ffffff; display: flex; align-items: center; gap: 8px; }
+    .card { background-color: #1e1e1e; border-radius: 10px; padding: 14px; margin-bottom: 14px; border: 1px solid #2d2d2d; }
+    #reader-container { position: relative; border-radius: 8px; overflow: hidden; background: #000; margin-bottom: 10px; display: none; }
+    #reader { width: 100%; }
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 12px; font-size: 1rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; touch-action: manipulation; }
+    .btn-primary { background-color: #1976d2; color: #fff; }
+    .btn-success { background-color: #2e7d32; color: #fff; }
+    .btn-secondary { background-color: #424242; color: #fff; }
+    .btn:disabled { background-color: #555; color: #888; cursor: not-allowed; }
+    .toggle-group { display: flex; gap: 10px; margin-bottom: 12px; }
+    .toggle-btn { flex: 1; padding: 12px; font-size: 1rem; font-weight: bold; border-radius: 8px; border: 2px solid #333; background-color: #252525; color: #888; cursor: pointer; text-align: center; }
+    .toggle-btn.active-out { border-color: #ef5350; background-color: #b71c1c; color: #fff; }
+    .toggle-btn.active-in { border-color: #66bb6a; background-color: #1b5e20; color: #fff; }
+    .form-group { margin-bottom: 12px; }
+    label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 4px; }
+    input { width: 100%; height: 44px; padding: 8px 12px; font-size: 1rem; background-color: #2a2a2a; border: 1px solid #444; border-radius: 6px; color: #fff; }
+    input:focus { outline: none; border-color: #1976d2; }
+    .info-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 0.95rem; }
+    .info-label { color: #888; }
+    .info-val { font-weight: bold; color: #fff; }
+    .stock-highlight { font-size: 1.4rem; font-weight: bold; color: #4fc3f7; }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal { background: #222; border-radius: 12px; padding: 20px; width: 100%; max-width: 380px; border: 1px solid #444; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+    .modal-title { font-size: 1.1rem; font-weight: bold; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: #ffa726; }
+    .modal-desc { font-size: 0.95rem; color: #ddd; margin-bottom: 20px; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 10px; }
+    .icon { width: 20px; height: 20px; fill: currentColor; display: inline-block; vertical-align: middle; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>
+      <svg class="icon" viewBox="0 0 24 24"><path d="M12 3L2 12h3v8h14v-8h3L12 3zm0 4.5l5 4.5v6h-3v-4H10v4H7v-6l5-4.5z"/></svg>
+      現場備品・在庫管理
+    </h1>
+    <span style="font-size: 0.8rem; color: #66bb6a;">● 稼働中</span>
+  </header>
+
+  <div class="card">
+    <div id="reader-container"><div id="reader"></div></div>
+    <button id="scan-btn" class="btn btn-primary" onclick="toggleScanner()">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm8 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0-2a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg>
+      <span id="scan-btn-text">QRスキャン開始</span>
+    </button>
+  </div>
+
+  <div id="item-card" class="card" style="display: none;">
+    <div class="info-row"><span class="info-label">備品コード:</span><span id="disp-code" class="info-val">---</span></div>
+    <div class="info-row"><span class="info-label">備品名:</span><span id="disp-name" class="info-val">---</span></div>
+    <div class="info-row"><span class="info-label">保管棚:</span><span id="disp-loc" class="info-val">---</span></div>
+    <div class="info-row" style="margin-top: 8px; border-top: 1px solid #333; padding-top: 8px;">
+      <span class="info-label">現在庫数:</span><span id="disp-stock" class="stock-highlight">0</span>
+    </div>
+  </div>
+
+  <div class="card" id="form-card" style="display: none;">
+    <div class="toggle-group">
+      <div id="btn-type-out" class="toggle-btn active-out" onclick="setType('出庫・持出')">出庫・持出</div>
+      <div id="btn-type-in" class="toggle-btn" onclick="setType('入庫・返却')">入庫・返却</div>
+    </div>
+    <div class="form-group"><label>数量 (必須)</label><input type="number" id="input-qty" value="1" min="1" inputmode="numeric"></div>
+    <div class="form-group"><label>担当者名</label><input type="text" id="input-user" placeholder="作業者名を入力"></div>
+    <div class="form-group"><label>備考・用途</label><input type="text" id="input-note" placeholder="例: 〇〇現場、予備補充"></div>
+    <button id="submit-btn" class="btn btn-success" onclick="prepareSubmit()">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+      登録する
+    </button>
+  </div>
+
+  <div id="duplicate-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+        二重登録の警告
+      </div>
+      <div id="duplicate-msg" class="modal-desc"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+        <button class="btn btn-primary" onclick="executeSubmit()">そのまま登録</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ★ ここに先ほどコピーしたAPIのURL（/execで終わるもの）を貼り付けます ★
+    const API_URL = "https://script.google.com/macros/s/AKfycbx_7yGhiAoEDPqhkpjq7OCB2OTONvUl6ZglaZjnpbRXjuSoFHNKn_ubNNnekcFkh68Jrw/exec";
+
+    let html5QrCode = null, isScanning = false, currentType = '出庫・持出', currentItem = null;
+
+    // 通信用共通関数 (google.script.runの代わり)
+    async function apiCall(action, data) {
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' }, // CORS対応
+          body: JSON.stringify({ action: action, data: data }),
+          redirect: 'follow'
+        });
+        return await response.json();
+      } catch (err) {
+        throw new Error('通信エラーが発生しました: ' + err.message);
+      }
+    }
+
+    function setType(type) {
+      currentType = type;
+      document.getElementById('btn-type-out').className = type === '出庫・持出' ? 'toggle-btn active-out' : 'toggle-btn';
+      document.getElementById('btn-type-in').className = type === '入庫・返却' ? 'toggle-btn active-in' : 'toggle-btn';
+    }
+
+    function toggleScanner() {
+      isScanning ? stopScanner() : startScanner();
+    }
+
+    function startScanner() {
+      const container = document.getElementById('reader-container');
+      container.style.display = 'block';
+      if (html5QrCode) { try { html5QrCode.clear(); } catch(e) {} }
+      html5QrCode = new Html5Qrcode("reader");
+
+      Html5Qrcode.getCameras().then(cameras => {
+        if (!cameras || cameras.length === 0) return alert('カメラが見つかりません。');
+        let backCamera = cameras.find(c => /back|rear|environment|背面|外/i.test(c.label));
+        let selected = backCamera ? backCamera.id : cameras[cameras.length - 1].id;
+
+        html5QrCode.start(selected, { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, onScanSuccess)
+          .then(() => updateBtn('スキャンを停止', 'btn btn-secondary', true))
+          .catch(err => alert('カメラ起動エラー: ' + err));
+      }).catch(err => {
+        html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScanSuccess)
+          .then(() => updateBtn('スキャンを停止', 'btn btn-secondary', true))
+          .catch(e => alert('カメラ権限エラー: ' + e));
+      });
+    }
+
+    function stopScanner() {
+      if (html5QrCode && isScanning) {
+        html5QrCode.stop().then(() => updateBtn('QRスキャン開始', 'btn btn-primary', false)).catch(console.error);
+      }
+    }
+
+    function updateBtn(text, className, scanningState) {
+      document.getElementById('reader-container').style.display = scanningState ? 'block' : 'none';
+      document.getElementById('scan-btn-text').innerText = text;
+      document.getElementById('scan-btn').className = className;
+      isScanning = scanningState;
+    }
+
+    async function onScanSuccess(decodedText) {
+      stopScanner();
+      if (navigator.vibrate) navigator.vibrate(100);
+      document.getElementById('scan-btn-text').innerText = '品名照会中...';
+
+      try {
+        const res = await apiCall('getItemData', { code: decodedText });
+        if (!res.success) throw new Error(res.message);
+        
+        currentItem = res.item;
+        document.getElementById('disp-code').innerText = currentItem.code;
+        document.getElementById('disp-name').innerText = currentItem.name;
+        document.getElementById('disp-loc').innerText = currentItem.location || '設定なし';
+        document.getElementById('disp-stock').innerText = currentItem.currentStock;
+        
+        document.getElementById('item-card').style.display = 'block';
+        document.getElementById('form-card').style.display = 'block';
+        window.scrollTo({ top: document.getElementById('item-card').offsetTop - 20, behavior: 'smooth' });
+        document.getElementById('scan-btn-text').innerText = '別のQRをスキャン';
+      } catch (err) {
+        alert(err.message);
+        document.getElementById('scan-btn-text').innerText = 'QRスキャン開始';
+      }
+    }
+
+    async function prepareSubmit() {
+      const qty = Number(document.getElementById('input-qty').value);
+      if (!currentItem || qty <= 0) return alert('数量を正しく入力してください');
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true; btn.innerText = 'チェック中...';
+
+      try {
+        const res = await apiCall('checkDuplicate', { code: currentItem.code, type: currentType, quantity: qty });
+        if (res.isDuplicate) {
+          document.getElementById('duplicate-msg').innerHTML = `本日 <strong>【${res.matchedTime}】</strong> に同一の【${currentType}：${qty}点】が記録されています。<br><br>二重登録ではありませんか？`;
+          document.getElementById('duplicate-modal').style.display = 'flex';
+          btn.disabled = false; btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg> 登録する';
+        } else {
+          executeSubmit();
+        }
+      } catch (err) {
+        executeSubmit(); // エラー時はそのまま書き込みを試行
+      }
+    }
+
+    async function executeSubmit() {
+      closeModal();
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true; btn.innerText = '登録中...';
+
+      const param = {
+        code: currentItem.code,
+        type: currentType,
+        quantity: document.getElementById('input-qty').value,
+        user: document.getElementById('input-user').value,
+        note: document.getElementById('input-note').value
+      };
+
+      try {
+        const res = await apiCall('recordTransaction', param);
+        if (!res.success) throw new Error(res.message);
+        
+        alert('正常に登録されました！');
+        document.getElementById('input-note').value = '';
+        
+        // 最新在庫を再取得して表示更新
+        const refreshRes = await apiCall('getItemData', { code: currentItem.code });
+        if (refreshRes.success) document.getElementById('disp-stock').innerText = refreshRes.item.currentStock;
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg> 登録する';
+      }
+    }
+
+    function closeModal() { document.getElementById('duplicate-modal').style.display = 'none'; }
+  </script>
+</body>
+</html>
